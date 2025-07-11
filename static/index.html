@@ -1,0 +1,89 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>NFC Points App</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+  <div class="container">
+    <h1>NFC Points</h1>
+    <div id="status">Поднесите NFC-метку…</div>
+    <div id="controls" style="display:none;">
+      <button id="enroll">📑 Зарегистрировать метку</button>
+      <button id="add">➕ +5</button>
+      <button id="sub">➖ -5</button>
+      <p>Баланс: <span id="balance">0</span></p>
+    </div>
+  </div>
+
+  <script>
+    let currentTag = null;
+
+    function playSound() {
+      const ctx = new (window.AudioContext || window.webkitAudioContext)();
+      const o = ctx.createOscillator();
+      o.type = 'sine';
+      o.frequency.value = 440;
+      o.connect(ctx.destination);
+      o.start();
+      o.stop(ctx.currentTime + 0.15);
+    }
+
+    async function startScan() {
+      try {
+        const ndef = new NDEFReader();
+        await ndef.scan();
+        ndef.onreading = async event => {
+          currentTag = event.serialNumber;
+          document.getElementById('status').textContent = `Тег: ${currentTag}`;
+          document.getElementById('controls').style.display = 'block';
+
+          const res = await fetch(`/api/balance/${currentTag}`);
+          if (res.ok) {
+            const { points } = await res.json();
+            document.getElementById('balance').textContent = points;
+          } else {
+            document.getElementById('balance').textContent = '–';
+          }
+        };
+      } catch(err) {
+        document.getElementById('status').textContent = 'Ошибка NFC: ' + err;
+      }
+    }
+
+    async function enrollTag() {
+      if (!currentTag) return;
+      const res = await fetch('/api/enroll', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tagId: currentTag })
+      });
+      alert(res.ok ? 'Метка зарегистрирована!' : 'Ошибка регистрации');
+    }
+
+    async function updatePoints(delta) {
+      if (!currentTag) return;
+      playSound();
+      const res = await fetch('/api/update', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ tagId: currentTag, delta })
+      });
+      if (res.ok) {
+        const { points } = await res.json();
+        document.getElementById('balance').textContent = points;
+      } else {
+        alert('Ошибка обновления');
+      }
+    }
+
+    document.getElementById('enroll').onclick = enrollTag;
+    document.getElementById('add').onclick    = () => updatePoints(5);
+    document.getElementById('sub').onclick    = () => updatePoints(-5);
+
+    startScan();
+  </script>
+</body>
+</html>
